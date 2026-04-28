@@ -33,3 +33,33 @@ def todos_collection(request):
         })
 
     return HttpResponseNotAllowed(["GET", "POST"])
+
+@csrf_exempt
+def todo_detail(request, id):
+    try:
+        todo = Todo.objects.get(id=id)
+    except Todo.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if request.method == "DELETE":
+        todo.delete()
+        return JsonResponse({"deleted": True})
+
+    if request.method == "PATCH":
+        data = json.loads(request.body)
+
+        if "description" in data:
+            todo.description = data["description"]
+        if "completed" in data:
+            todo.completed = data["completed"]
+
+        todo.save()
+
+        return JsonResponse({
+            "id": todo.id,
+            "description": todo.description,
+            "completed": todo.completed,
+            "order_index": todo.order_index,
+        })
+
+    return HttpResponseNotAllowed(["PATCH", "DELETE"])
