@@ -81,3 +81,40 @@ def toggle_todo(request, id):
         "id": todo.id,
         "completed": todo.completed
     })
+
+@csrf_exempt
+def reorder_todos(request):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    try:
+        ordered_ids = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not isinstance(ordered_ids, list):
+        return JsonResponse({"error": "Expected a list of IDs"}, status=400)
+
+    # Optional: ensure no duplicates / invalid types
+    if len(set(ordered_ids)) != len(ordered_ids):
+        return JsonResponse({"error": "Duplicate IDs not allowed"}, status=400)
+
+    # Fetch all todos in one query
+    todos = Todo.objects.filter(id__in=ordered_ids)
+
+    # Ensure all IDs exist
+    existing_ids = set(t.id for t in todos)
+    if existing_ids != set(ordered_ids):
+        return JsonResponse({"error": "Some IDs do not exist"}, status=400)
+
+    # dictionary comprehension for fast lookup (like a list comprehension)
+    todo_map = {t.id: t for t in todos}
+
+    # Reassign order_index based on frontend order
+    for index, todo_id in enumerate(ordered_ids, start=1):
+        todo_map[todo_id].order_index = index
+
+    # Bulk update (efficient single database operation)
+    Todo.objects.bulk_update(todo_map.values(), ["order_index"])
+
+    return JsonResponse({"status": "ok", "updated": len(ordered_ids)})
