@@ -1,0 +1,214 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width,initial-scale=1,minimal-ui" name="viewport">
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@2.7.2/dist/vuetify.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+  </head>
+
+  <body>
+    <!-- element that vue watches and renders -->
+    <div id="app">
+      <!-- Vuetify components with default Material Design stylings and UX -->
+      <v-app>
+        <v-container>
+          <v-card>
+            <!-- 
+            v-model binds a reactive value both ways so the text field 
+            can update newTodo and the JS can edit newTodo and 
+            it shows in the text field.
+            When the append-icon is clicked, the code (method in this case)
+            in @click:append gets executed.
+            Same with @keyup.enter. That gets executed when the enter key is pressed
+            -->
+            <v-text-field
+              v-model="newTodo"
+              label="new todo item"
+              append-icon="mdi-plus"
+              @click:append="addTodo"
+              @keyup.enter="addTodo"
+              hide-details
+              outlined
+              clearable
+            ></v-text-field>
+          </v-card>
+
+          <v-list>
+            <draggable 
+              v-model="todos" 
+              handle=".handle"
+              @change="saveOrder"
+            >
+              <!-- loop through todo objects -->
+              <!-- should specify a key so Vue can reuse DOM elements when moving things around -->
+              <v-list-item v-for="todo in todos" :key="todo.id">
+                <v-list-item-icon class="handle" style="cursor: grab">
+                  <v-icon>mdi-drag</v-icon>
+                </v-list-item-icon>
+
+                <v-list-item-action>
+                  <v-checkbox
+                    v-model="todo.completed"
+                    @change="toggleTodo(todo.id)"
+                  ></v-checkbox>
+                </v-list-item-action>
+
+                <v-list-item-content>
+                  <!-- conditionally set the CSS classes based on todo.completed -->
+                  <!-- Vuetify has class helpers with some predefined CSS styles -->
+                  <!-- also, conditionally render this only if it's not being edited -->
+                  <v-list-item-title 
+                    :class="{'text-decoration-line-through grey--text': todo.completed}"
+                    v-if="editing_todo?.id != todo.id"
+                  >
+                    <!-- if the pencil is clicked, mark that it's this one being edited -->
+                    <v-btn
+                      icon
+                      x-small
+                      @click="editing_todo = todo"
+                    >
+                      <v-icon>mdi-pencil</v-icon>
+                    </v-btn>
+                    <!-- place the description here -->
+                    [[ todo.description ]]
+                  </v-list-item-title>
+
+                  <!-- else if it is being edited, make it a text field -->
+                  <v-text-field
+                    v-else
+                    v-model="todo.description"
+                    autofocus
+                    dense
+                    hide-details
+                    @keyup.enter="saveDescription(todo)"
+                    @keyup.esc="cancelEdit"
+                    @blur="cancelEdit"
+                  ></v-text-field>
+                </v-list-item-content>
+
+                <v-list-item-action>
+                  <v-btn icon @click="removeTodo(todo.id)">
+                    <v-icon>mdi-delete-outline</v-icon>
+                  </v-btn>
+                </v-list-item-action>
+              </v-list-item>
+            </draggable>
+          </v-list>
+        </v-container>
+      </v-app>
+    </div>
+
+    <script src="https://unpkg.com/vue@2.7.16"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@2.7.2/dist/vuetify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.8.4/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Vue.Draggable/2.20.0/vuedraggable.umd.min.js"></script>
+    <script>
+      new Vue({
+        // specify which element to mount on
+        el: '#app',
+        // register vuetify with Vue
+        vuetify: new Vuetify(),
+        // need to change delimiters because Flask jinja2 and vue bose use double curly braces
+        delimiters: ['[[', ']]'],
+        // reactive data that can be referenced in the html
+        data: {
+          // for the text field for creating a new todo
+          newTodo: '',
+          todos: [],
+          editing_todo: null,
+          reorderTimeout: null
+        },
+        methods: {
+          async fetchTodos() {
+            // GET the /todos from flask
+            const res = await fetch('/todos')
+            // and assign them to our reactive list
+            this.todos = await res.json()
+          },
+          async addTodo() {
+            // if empty, return
+            if (!this.newTodo.trim()) return
+
+            // POST the new todo
+            await fetch("/todos", {
+              method: "POST",
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({description: this.newTodo})
+            })
+            // clear the text box
+            this.newTodo = ''
+            // refresh the todo list
+            await this.fetchTodos()
+          },
+          async toggleTodo(id) {
+            await fetch(`/todos/${id}/toggle`, {
+              method: "POST"
+            })
+            await this.fetchTodos()
+          },
+          async saveDescription(todo) {
+            this.editing_todo = null
+            await fetch(`/todos/${todo.id}`, {
+              method: "PATCH",
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({description: todo.description})
+            })
+            await this.fetchTodos()
+          },
+          async cancelEdit() {
+            this.editing_todo = null
+            await this.fetchTodos()
+          },
+          async saveOrder() {
+            // if a user drags a todo down 5 different items, then this method
+            // will be called 5 times in under a second which increases load on
+            // the db/api, so to prevent those unneeded calls, we'll do
+            // something called a debounce. We set a timer to execute the method
+            // only after some time has passed. All future calls to this method
+            // will first check if a timer exists, and if it does, it cancels
+            // the timer, replacing it with its own timer/method to be called
+            // in the future
+
+            // here we cancel any previous timers
+            if (this.reorderTimeout) {
+              clearTimeout(this.timer)
+            }
+
+            // then we execute the save some time in the future
+            // and save the timer so we can cancel it if needed
+            this.reorderTimeout = setTimeout(async () => {
+              await fetch("/todos/reorder", {
+                method: "POST",
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                // todos.map returns a list of each item mapped to the 
+                // result of the function specified, so in this case
+                // it's a list of todo ids
+                body: JSON.stringify({new_order: this.todos.map(t => t.id)})
+              })
+              await this.fetchTodos()
+            }, 1000) // execute it after a 1 second delay
+          },
+          async removeTodo(id) {
+            // usually you confirm with the user if they want to delete
+            // but this isn't a UX tutorial
+            await fetch(`/todos/${id}`, {
+              method: "DELETE"
+            })
+            await this.fetchTodos()
+          }
+        },
+        // run this once it has finished initial rendering and has created DOM nodes
+        async mounted() {
+          await this.fetchTodos()
+        }
+      })
+    </script>
+  </body>
+</html>
