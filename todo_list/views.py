@@ -63,3 +63,21 @@ def todo_detail(request, id):
         })
 
     return HttpResponseNotAllowed(["PATCH", "DELETE"])
+
+@csrf_exempt
+def toggle_todo(request, id):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    try:
+        todo = Todo.objects.get(id=id)
+    except Todo.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    todo.completed = not todo.completed
+    todo.save()
+
+    return JsonResponse({
+        "id": todo.id,
+        "completed": todo.completed
+    })
