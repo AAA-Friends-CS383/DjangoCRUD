@@ -57,6 +57,8 @@ pip install python-dotenv
 
 Simply follow along the git changes by doing `git checkout <step>` where `<step>` is the current step you're at in the walkthrough. ex. `git checkout 1` is the 1st step. You can check what the changes were by doing `git show`.
 
+You can also follow along with [the slides](https://docs.google.com/presentation/d/1vrfp4OHvKlK8nYXLpPDjyZCFC6zxfdold8haab-UmKg/edit?usp=sharing).
+
 ## Additional steps
 
 ### Step 1.
